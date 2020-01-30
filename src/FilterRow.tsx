@@ -4,7 +4,7 @@ import classNames from 'classnames';
 import { CalculatedColumn, Filters } from './common/types';
 import { DataGridProps } from './DataGrid';
 
-type SharedDataGridProps<R> = Pick<DataGridProps<R, never>,
+type SharedDataGridProps<R extends {}> = Pick<DataGridProps<string, R>,
 | 'filters'
 | 'onFiltersChange'
 >;

@@ -152,7 +152,7 @@ export default function CellActions() {
   return (
     <AutoSizer>
       {({ height, width }) => (
-        <DataGrid<Row, 'id'>
+        <DataGrid
           columns={columns}
           rows={rows}
           rowKey="id"

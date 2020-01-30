@@ -24,13 +24,12 @@ import {
   RowRendererProps,
   ScrollPosition,
   Filters,
-  FormatterProps,
-  ExtractIDKeys
+  FormatterProps
 } from './common/types';
 
 export { DataGridHandle };
 
-export interface DataGridProps<R, K extends ExtractIDKeys<R>> {
+export interface DataGridProps<K extends string, R extends { [key in K]: number | string }> {
   /**
    * Grid and data Props
    */
@@ -142,7 +141,7 @@ export interface DataGridProps<R, K extends ExtractIDKeys<R>> {
  *
  * <DataGrid columns={columns} rows={rows} />
 */
-function DataGrid<R, K extends ExtractIDKeys<R>>({
+function DataGrid<K extends string, R extends { [key in K]: number | string }>({
   rowKey,
   rowHeight = 35,
   headerRowHeight = rowHeight,
@@ -163,7 +162,7 @@ function DataGrid<R, K extends ExtractIDKeys<R>>({
   selectedRows,
   onSelectedRowsChange,
   ...props
-}: DataGridProps<R, K>, ref: React.Ref<DataGridHandle>) {
+}: DataGridProps<K, R>, ref: React.Ref<DataGridHandle>) {
   const [columnWidths, setColumnWidths] = useState(() => new Map<keyof R, number>());
   const [scrollLeft, setScrollLeft] = useState(0);
   const [gridWidth, setGridWidth] = useState(0);
@@ -259,7 +258,7 @@ function DataGrid<R, K extends ExtractIDKeys<R>>({
             ref={headerRef}
             className="rdg-header"
           >
-            <HeaderRow<R, K>
+            <HeaderRow<K, R>
               rowKey={rowKey}
               rows={rows}
               height={headerRowHeight}
@@ -289,7 +288,7 @@ function DataGrid<R, K extends ExtractIDKeys<R>>({
             )}
           </div>
           {rows.length === 0 && props.emptyRowsView ? createElement(props.emptyRowsView) : (
-            <Canvas<R, K>
+            <Canvas<K, R>
               ref={ref}
               rowKey={rowKey}
               rowHeight={rowHeight}
@@ -326,4 +325,4 @@ function DataGrid<R, K extends ExtractIDKeys<R>>({
 
 export default forwardRef(
   DataGrid as React.RefForwardingComponent<DataGridHandle>
-) as <R, K extends ExtractIDKeys<R>>(props: DataGridProps<R, K> & { ref?: React.Ref<DataGridHandle> }) => JSX.Element;
+) as <K extends string, R extends { [key in K]: number | string }>(props: DataGridProps<K, R> & { ref?: React.Ref<DataGridHandle> }) => JSX.Element;
