@@ -1,37 +1,27 @@
 import React from 'react';
-import { shallow } from 'enzyme';
+import { mount } from 'enzyme';
 
 import InteractionMasks from '../masks/InteractionMasks';
 import Canvas, { CanvasProps } from '../Canvas';
-import RowsContainer from '../RowsContainer';
-import EventBus from '../masks/EventBus';
+import EventBus from '../EventBus';
 import { CellNavigationMode } from '../common/enums';
 import { CalculatedColumn } from '../common/types';
+import RowComponent from '../Row';
+import { valueCellContentRenderer } from '../Cell/cellContentRenderers';
 
 interface Row {
-  id?: number;
-  row?: string;
-  __metaData?: unknown;
+  id: number;
+  row: string;
 }
 
 const noop = () => null;
-const getRows = (wrp: ReturnType<typeof renderComponent>) => wrp.find(RowsContainer).children().props().children;
 
-const testProps: CanvasProps<Row> = {
-  rowKey: 'row',
+const testProps: CanvasProps<Row, 'id'> = {
+  rowKey: 'id',
   rowHeight: 25,
   height: 200,
-  rowOverscanStartIdx: 1,
-  rowOverscanEndIdx: 10,
-  rowVisibleStartIdx: 0,
-  rowVisibleEndIdx: 10,
-  colVisibleStartIdx: 0,
-  colVisibleEndIdx: 100,
-  colOverscanStartIdx: 0,
-  colOverscanEndIdx: 100,
   rowsCount: 1,
-  columns: [],
-  rowGetter() { return {}; },
+  rowGetter(id) { return { id, row: String(id) }; },
   cellMetaData: {
     rowKey: 'row',
     onCellClick() { },
@@ -46,106 +36,78 @@ const testProps: CanvasProps<Row> = {
     onGridRowsUpdated: noop,
     onDragHandleDoubleClick: noop
   },
-  isScrolling: false,
+  onRowSelectionChange() {},
   enableCellSelect: true,
   enableCellAutoFocus: false,
   cellNavigationMode: CellNavigationMode.NONE,
   eventBus: new EventBus(),
   editorPortalTarget: document.body,
-  width: 1000,
-  totalWidth: 1000,
-  totalColumnWidth: 1000,
-  onScroll() { },
-  lastFrozenColumnIndex: 0,
-  RowsContainer: RowsContainer as CanvasProps<Row>['RowsContainer']
+  onScroll() {},
+  columnMetrics: {
+    columns: [{
+      key: 'row',
+      name: 'ID',
+      idx: 0,
+      width: 100,
+      left: 100,
+      cellContentRenderer: valueCellContentRenderer
+    }],
+    lastFrozenColumnIndex: -1,
+    totalColumnWidth: 0,
+    viewportWidth: 1000
+  },
+  renderBatchSize: 8,
+  onCanvasKeydown() {},
+  onCanvasKeyup() {}
 };
 
-function renderComponent(extraProps?: Partial<CanvasProps<Row>>) {
-  return shallow<Canvas<Row>>(<Canvas<Row> {...testProps} {...extraProps} />);
+function renderComponent(extraProps?: Partial<CanvasProps<Row, 'id'>>) {
+  return mount(<Canvas<Row, 'id'> {...testProps} {...extraProps} />);
 }
 
 describe('Canvas Tests', () => {
-  it('Should not call setScroll on render', () => {
-    const wrapper = renderComponent();
-    const testElementNode = wrapper.instance();
-
-    jest.spyOn(testElementNode, 'setScrollLeft').mockImplementation(() => { });
-    expect(testElementNode.setScrollLeft).not.toHaveBeenCalled();
-  });
-
-  it('Should not call setScroll on update', () => {
-    const wrapper = renderComponent();
-    const testElementNode = wrapper.instance();
-
-    jest.spyOn(testElementNode, 'setScrollLeft').mockImplementation(() => { });
-    testElementNode.componentDidUpdate(testProps);
-    expect(testElementNode.setScrollLeft).not.toHaveBeenCalled();
-  });
-
   it('Should render the InteractionMasks component', () => {
     const wrapper = renderComponent();
 
     expect(wrapper.find(InteractionMasks).props()).toMatchObject({
       rowHeight: 25,
       rowsCount: 1,
-      rowVisibleStartIdx: 0,
-      rowVisibleEndIdx: 10,
       colVisibleStartIdx: 0,
-      colVisibleEndIdx: 100
+      colVisibleEndIdx: 0
     });
   });
 
   describe('Row Selection', () => {
-    const COLUMNS = [{ key: 'id', name: 'ID', idx: 0, width: 100, left: 100 }];
-
-    describe('selectBy index', () => {
-      it('renders row selected', () => {
-        const rowGetter = () => ({ id: 1 });
-
-        const props = { rowOverscanStartIdx: 0, rowOverscanEndIdx: 1, COLUMNS, rowGetter, rowsCount: 1, rowSelection: { indexes: [0] } };
-        const wrapper = renderComponent(props);
-
-        const rows = getRows(wrapper);
-        expect(rows[0].props.isSelected).toBe(true);
+    it('renders row selected', () => {
+      const wrapper = renderComponent({
+        rowGetter(id) { return { id, row: 'one' }; },
+        rowsCount: 1,
+        rowKey: 'id',
+        selectedRows: new Set([0])
       });
-    });
 
-    describe('selectBy keys', () => {
-      it('renders row selected', () => {
-        const rowGetter = () => { return { id: 1 }; };
-
-        const props = { rowOverscanStartIdx: 0, rowOverscanEndIdx: 1, COLUMNS, rowGetter, rowsCount: 1, rowSelection: { keys: { rowKey: 'id', values: [1] } } };
-        const wrapper = renderComponent(props);
-
-        const rows = getRows(wrapper);
-        expect(rows[0].props.isSelected).toBe(true);
-      });
-    });
-
-
-    describe('selectBy `isSelectedKey`', () => {
-      it('renders row selected', () => {
-        const rowGetter = (i: number) => i === 0 ? { id: 1, isSelected: true } : {};
-
-        const props = { rowOverscanStartIdx: 0, rowOverscanEndIdx: 1, COLUMNS, rowGetter, rowsCount: 1, rowSelection: { isSelectedKey: 'isSelected' } };
-        const wrapper = renderComponent(props);
-
-        const rows = getRows(wrapper);
-        expect(rows[0].props.isSelected).toBe(true);
-      });
+      expect(wrapper.find(RowComponent).props().isRowSelected).toBe(true);
     });
   });
 
   describe('Tree View', () => {
-    const COLUMNS: CalculatedColumn<Row>[] = [{ idx: 0, key: 'id', name: 'ID', width: 100, left: 100 }];
+    const COLUMNS: CalculatedColumn<Row>[] = [{
+      idx: 0,
+      key: 'id',
+      name: 'ID',
+      width: 100,
+      left: 100,
+      cellContentRenderer: valueCellContentRenderer
+    }];
 
     it('can render a custom renderer if __metadata property exists', () => {
       const EmptyChildRow = (props: unknown, rowIdx: number) => {
         return <div key={rowIdx} className="test-row-renderer" />;
       };
 
-      const rowGetter = () => ({
-        id: 0,
+      const rowGetter = (id: number) => ({
+        id,
+        row: String(id),
         __metaData: {
           isGroup: false,
           treeDepth: 0,
@@ -179,8 +141,7 @@ describe('Canvas Tests', () => {
       };
 
       const wrapper = renderComponent(props);
-      const rows = getRows(wrapper);
-      expect(rows[0].props.className).toBe('test-row-renderer');
+      expect(wrapper.find('.test-row-renderer')).toHaveLength(1);
     });
   });
 });

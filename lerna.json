@@ -1,5 +1,5 @@
 {
-  "version": "7.0.0-alpha.20",
+  "version": "7.0.0-alpha.29",
   "ignoreChanges": [
     "*.spec.*",
     "*.md"
@@ -8,7 +8,7 @@
     "publish": {
       "allowBranch": [
         "master",
-        "next",
+        "alpha",
         "canary"
       ],
       "message": "Publish %s"

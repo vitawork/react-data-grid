@@ -1,16 +1,15 @@
 import React from 'react';
 import { shallow, mount } from 'enzyme';
 
-import InteractionMasks, { InteractionMasksProps, InteractionMasksState } from '../InteractionMasks';
+import InteractionMasks, { InteractionMasksProps, InteractionMasksState, KeyCodes } from '../InteractionMasks';
 import SelectionMask from '../SelectionMask';
 import SelectionRangeMask from '../SelectionRangeMask';
 import CopyMask from '../CopyMask';
 import DragMask from '../DragMask';
 import DragHandle from '../DragHandle';
-import EventBus from '../EventBus';
+import EventBus from '../../EventBus';
 import EditorContainer from '../../common/editors/EditorContainer';
 import { sel, createColumns } from '../../__tests__/utils';
-import keyCodes from '../../KeyCodes';
 import { CellNavigationMode, EventTypes, UpdateActions } from '../../common/enums';
 import { Position } from '../../common/types';
 
@@ -19,17 +18,16 @@ const ROWS_COUNT = 5;
 const columns = createColumns(NUMBER_OF_COLUMNS);
 
 interface Row {
-  [key: string]: unknown;
+  [key: string]: React.ReactNode;
 }
 
 describe('<InteractionMasks/>', () => {
   const rowGetter = () => ({ col1: 1 });
 
-  function setup<K extends keyof InteractionMasksState>(overrideProps?: Partial<InteractionMasksProps<Row>>, initialState?: Pick<InteractionMasksState, K>, isMount = false) {
+  function setup<K extends keyof InteractionMasksState>(overrideProps?: Partial<InteractionMasksProps<Row, 'id'>>, initialState?: Pick<InteractionMasksState, K>, isMount = false) {
     const onCellSelected = jest.fn();
-    const props: InteractionMasksProps<Row> = {
-      rowVisibleStartIdx: 0,
-      rowVisibleEndIdx: 10,
+    const props: InteractionMasksProps<Row, 'id'> = {
+      height: 100,
       colVisibleStartIdx: 0,
       colVisibleEndIdx: 10,
       columns,
@@ -53,8 +51,6 @@ describe('<InteractionMasks/>', () => {
       cellNavigationMode: CellNavigationMode.NONE,
       eventBus: new EventBus(),
       getRowColumns: () => columns,
-      getRowHeight: () => 50,
-      getRowTop: () => 0,
       editorPortalTarget: document.body,
       scrollLeft: 0,
       scrollTop: 0,
@@ -62,13 +58,13 @@ describe('<InteractionMasks/>', () => {
     };
 
     if (isMount) {
-      const wrapper = mount<InteractionMasks<Row>>(<InteractionMasks {...props} />);
+      const wrapper = mount<InteractionMasks<Row, 'id'>>(<InteractionMasks {...props} />);
       initialState && wrapper.setState(initialState);
       onCellSelected.mockReset();
       return { wrapper, props };
     }
 
-    const wrapper = shallow<InteractionMasks<Row>>(<InteractionMasks {...props} />, { disableLifecycleMethods: false });
+    const wrapper = shallow<InteractionMasks<Row, 'id'>>(<InteractionMasks {...props} />, { disableLifecycleMethods: false });
     initialState && wrapper.setState(initialState);
     onCellSelected.mockReset();
     return { wrapper, props };
@@ -79,7 +75,7 @@ describe('<InteractionMasks/>', () => {
   };
 
   const simulateTab = (wrapper: ReturnType<typeof setup>['wrapper'], shiftKey = false, preventDefault = () => { }) => {
-    pressKey(wrapper, 'Tab', { keyCode: keyCodes.Tab, shiftKey, preventDefault });
+    pressKey(wrapper, 'Tab', { keyCode: KeyCodes.Tab, shiftKey, preventDefault });
   };
 
   describe('Rendered masks', () => {
@@ -126,7 +122,7 @@ describe('<InteractionMasks/>', () => {
           }
         });
         expect(wrapper.find(SelectionMask).length).toBe(1);
-        expect(wrapper.find(SelectionMask).props()).toEqual({ height: 50, left: 0, top: 0, width: 100, zIndex: 1 });
+        expect(wrapper.find(SelectionMask).props()).toEqual({ height: 30, left: 0, top: 0, width: 100, zIndex: 1 });
       });
     });
   });
@@ -213,11 +209,11 @@ describe('<InteractionMasks/>', () => {
 
       it('should give focus to InteractionMasks once a selection has ended', () => {
         // We have to use mount, rather than shallow, so that InteractionMasks has a ref to it's node, used for focusing
-        const { props } = setup(undefined, undefined, true);
+        const { wrapper, props } = setup(undefined, undefined, true);
         props.eventBus.dispatch(EventTypes.SELECT_START, { idx: 2, rowIdx: 2 });
-        jest.spyOn(InteractionMasks.prototype, 'focus').mockImplementation(() => { });
+        jest.spyOn(wrapper.instance(), 'focus').mockImplementation(() => { });
         props.eventBus.dispatch(EventTypes.SELECT_END);
-        expect(InteractionMasks.prototype.focus).toHaveBeenCalled();
+        expect(wrapper.instance().focus).toHaveBeenCalled();
       });
     });
   });
@@ -434,7 +430,7 @@ describe('<InteractionMasks/>', () => {
   describe('Keyboard navigation functionality', () => {
     it('Press enter should enable editing', () => {
       const { wrapper } = setup({}, { selectedPosition: { idx: 0, rowIdx: 0 } });
-      pressKey(wrapper, 'Enter', { keyCode: keyCodes.Enter });
+      pressKey(wrapper, 'Enter', { keyCode: KeyCodes.Enter });
       expect(wrapper.find(EditorContainer).length).toBe(1);
     });
 
@@ -470,14 +466,14 @@ describe('<InteractionMasks/>', () => {
       it('Press tab should move right', () => {
         const currentCell = { idx: 0, rowIdx: 0 };
         const { wrapper } = setup({}, { selectedPosition: currentCell });
-        pressKey(wrapper, 'Tab', { keyCode: keyCodes.Tab });
+        pressKey(wrapper, 'Tab', { keyCode: KeyCodes.Tab });
         expect(wrapper.state().selectedPosition).toMatchObject({ idx: 1, rowIdx: 0 });
       });
 
       it('Press shiftKey + tab should move left', () => {
         const currentCell = { idx: 1, rowIdx: 0 };
         const { wrapper } = setup({}, { selectedPosition: currentCell });
-        pressKey(wrapper, 'Tab', { keyCode: keyCodes.Tab, shiftKey: true });
+        pressKey(wrapper, 'Tab', { keyCode: KeyCodes.Tab, shiftKey: true });
         expect(wrapper.state().selectedPosition).toMatchObject({ idx: 0, rowIdx: 0 });
       });
     });
@@ -566,20 +562,20 @@ describe('<InteractionMasks/>', () => {
         expect(wrapper.state().selectedPosition).toEqual({ idx: -1, rowIdx: -1 });
       };
 
-      const tabCell = <K extends keyof InteractionMasksState>(props: Partial<InteractionMasksProps<{}>>, shiftKey?: boolean, state?: Pick<InteractionMasksState, K>) => {
+      const tabCell = <K extends keyof InteractionMasksState>(props: Partial<InteractionMasksProps<Row, 'id'>>, shiftKey?: boolean, state?: Pick<InteractionMasksState, K>) => {
         const { wrapper } = setup(props, state);
         const preventDefaultSpy = jest.fn();
         simulateTab(wrapper, shiftKey, preventDefaultSpy);
         return { wrapper, preventDefaultSpy };
       };
 
-      const assertExitGridOnTab = <K extends keyof InteractionMasksState>(props: Partial<InteractionMasksProps<{}>>, shiftKey?: boolean, state?: Pick<InteractionMasksState, K>) => {
+      const assertExitGridOnTab = <K extends keyof InteractionMasksState>(props: Partial<InteractionMasksProps<Row, 'id'>>, shiftKey?: boolean, state?: Pick<InteractionMasksState, K>) => {
         const { wrapper, preventDefaultSpy } = tabCell(props, shiftKey, state);
         expect(preventDefaultSpy).not.toHaveBeenCalled();
         assertGridWasExited(wrapper);
       };
 
-      const assertSelectedCellOnTab = <K extends keyof InteractionMasksState>(props: Partial<InteractionMasksProps<{}>>, shiftKey?: boolean, state?: Pick<InteractionMasksState, K>) => {
+      const assertSelectedCellOnTab = <K extends keyof InteractionMasksState>(props: Partial<InteractionMasksProps<Row, 'id'>>, shiftKey?: boolean, state?: Pick<InteractionMasksState, K>) => {
         const { wrapper, preventDefaultSpy } = tabCell(props, shiftKey, state);
         expect(preventDefaultSpy).toHaveBeenCalled();
         return expect(wrapper.state().selectedPosition);
@@ -713,40 +709,42 @@ describe('<InteractionMasks/>', () => {
 
     it('should render a CopyMask component when a cell is copied', () => {
       const { wrapper } = setupCopy();
-      pressKey(wrapper, 'c', { keyCode: keyCodes.c, ctrlKey: true });
-      expect(wrapper.find(CopyMask).props()).toEqual({ height: 50, left: 100, top: 0, width: 100, zIndex: 1 });
+      pressKey(wrapper, 'c', { keyCode: KeyCodes.c, ctrlKey: true });
+      expect(wrapper.find(CopyMask).props()).toEqual({ height: 30, left: 100, top: 60, width: 100, zIndex: 1 });
     });
 
     it('should remove the CopyMask component on escape', () => {
       const { wrapper } = setupCopy();
-      pressKey(wrapper, 'c', { keyCode: keyCodes.c, ctrlKey: true });
-      pressKey(wrapper, 'Escape', { keyCode: keyCodes.Escape });
+      pressKey(wrapper, 'c', { keyCode: KeyCodes.c, ctrlKey: true });
+      pressKey(wrapper, 'Escape', { keyCode: KeyCodes.Escape });
       expect(wrapper.find(CopyMask).length).toBe(0);
     });
 
     it('should update the selected cell with the copied value on paste', () => {
       const { wrapper, props } = setupCopy();
       // Copy selected cell
-      pressKey(wrapper, 'c', { keyCode: keyCodes.c, ctrlKey: true });
+      pressKey(wrapper, 'c', { keyCode: KeyCodes.c, ctrlKey: true });
       // Move up
       pressKey(wrapper, 'ArrowUp');
       // Paste copied cell
-      pressKey(wrapper, 'v', { keyCode: keyCodes.v, ctrlKey: true });
+      pressKey(wrapper, 'v', { keyCode: KeyCodes.v, ctrlKey: true });
 
       expect(props.onGridRowsUpdated).toHaveBeenCalledWith('Column1', 1, 1, { Column1: '3' }, UpdateActions.COPY_PASTE, 2);
     });
   });
 
   describe('Drag functionality', () => {
-    const setupDrag = () => {
-      const selectedPosition = { idx: 1, rowIdx: 2 };
+    const setupDrag = (rowIdx = 2) => {
+      const selectedPosition = { idx: 1, rowIdx };
       const rows = [
         { Column1: '1' },
         { Column1: '2' },
-        { Column1: '3' }
+        { Column1: '3' },
+        { Column1: '4' },
+        { Column1: '5' }
       ];
       return setup({
-        rowGetter: (rowIdx) => rowIdx < 3 ? rows[rowIdx] : rowGetter()
+        rowGetter: (rowIdx) => rowIdx < 5 ? rows[rowIdx] : rowGetter()
       }, { selectedPosition });
     };
 
@@ -768,7 +766,7 @@ describe('<InteractionMasks/>', () => {
       expect(setData).toHaveBeenCalled();
     });
 
-    it('should update the dragged over cells on drag end', () => {
+    it('should update the dragged over cells on downwards drag end', () => {
       const { wrapper, props } = setupDrag();
       const setData = jest.fn();
       wrapper.find(DragHandle).simulate('dragstart', {
@@ -779,6 +777,19 @@ describe('<InteractionMasks/>', () => {
       wrapper.find(DragHandle).simulate('dragEnd');
 
       expect(props.onGridRowsUpdated).toHaveBeenCalledWith('Column1', 2, 6, { Column1: '3' }, UpdateActions.CELL_DRAG);
+    });
+
+    it('should update the dragged over cells on upwards drag end', () => {
+      const { wrapper, props } = setupDrag(4);
+      const setData = jest.fn();
+      wrapper.find(DragHandle).simulate('dragstart', {
+        target: { className: 'test' },
+        dataTransfer: { setData }
+      });
+      props.eventBus.dispatch(EventTypes.DRAG_ENTER, 0);
+      wrapper.find(DragHandle).simulate('dragEnd');
+
+      expect(props.onGridRowsUpdated).toHaveBeenCalledWith('Column1', 4, 0, { Column1: '5' }, UpdateActions.CELL_DRAG);
     });
   });
 

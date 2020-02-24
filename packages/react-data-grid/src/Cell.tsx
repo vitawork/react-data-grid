@@ -1,151 +1,87 @@
-import React from 'react';
+import React, { forwardRef, memo } from 'react';
 import classNames from 'classnames';
 
-import { SubRowOptions, ColumnEventInfo, CellRenderer, CellRendererProps } from './common/types';
-import CellActions from './Cell/CellActions';
-import CellExpand from './Cell/CellExpander';
-import CellContent from './Cell/CellContent';
-import { isFrozen } from './ColumnUtils';
+import { CellRendererProps, ColumnEventInfo } from './common/types';
+import { isFrozen, wrapEvent } from './utils';
 
-function getSubRowOptions<R>({ rowIdx, idx, rowData, expandableOptions: expandArgs }: Props<R>): SubRowOptions<R> {
-  return { rowIdx, idx, rowData, expandArgs };
-}
-
-export interface Props<R> extends CellRendererProps<R> {
+export interface CellProps<R> extends CellRendererProps<R> {
   // TODO: Check if these props are required or not. These are most likely set by custom cell renderer
+  children?: React.ReactNode;
   className?: string;
-  tooltip?: string | null;
-  cellControls?: unknown;
 }
 
-export default class Cell<R> extends React.PureComponent<Props<R>> implements CellRenderer {
-  static defaultProps = {
-    value: ''
-  };
-
-  private readonly cell = React.createRef<HTMLDivElement>();
-
-  componentDidMount() {
-    this.checkScroll();
-  }
-
-  componentDidUpdate(prevProps: Props<R>) {
-    if (isFrozen(prevProps.column) && !isFrozen(this.props.column)) {
-      this.removeScroll();
-    }
-  }
-
-  handleCellClick = () => {
-    const { idx, rowIdx, cellMetaData } = this.props;
+function Cell<R>({
+  cellMetaData,
+  children,
+  className,
+  column,
+  expandableOptions,
+  idx,
+  isRowSelected,
+  isSummaryRow,
+  lastFrozenColumnIndex,
+  onRowSelectionChange,
+  rowData,
+  rowIdx,
+  scrollLeft,
+  ...props
+}: CellProps<R>, ref: React.Ref<HTMLDivElement>) {
+  function handleCellClick() {
     cellMetaData.onCellClick({ idx, rowIdx });
-  };
+  }
 
-  handleCellMouseDown = () => {
-    const { idx, rowIdx, cellMetaData } = this.props;
+  function handleCellMouseDown() {
     if (cellMetaData.onCellMouseDown) {
       cellMetaData.onCellMouseDown({ idx, rowIdx });
     }
-  };
+  }
 
-  handleCellMouseEnter = () => {
-    const { idx, rowIdx, cellMetaData } = this.props;
+  function handleCellMouseEnter() {
     if (cellMetaData.onCellMouseEnter) {
       cellMetaData.onCellMouseEnter({ idx, rowIdx });
     }
-  };
+  }
 
-  handleCellContextMenu = () => {
-    const { idx, rowIdx, cellMetaData } = this.props;
+  function handleCellContextMenu() {
     cellMetaData.onCellContextMenu({ idx, rowIdx });
-  };
+  }
 
-  handleCellDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  function handleCellDoubleClick(e: React.MouseEvent<HTMLDivElement>) {
     e.stopPropagation();
-    const { idx, rowIdx, cellMetaData } = this.props;
     cellMetaData.onCellDoubleClick({ idx, rowIdx });
-  };
+  }
 
-  handleCellExpand = () => {
-    const { onCellExpand } = this.props.cellMetaData;
-    if (onCellExpand) {
-      onCellExpand(getSubRowOptions(this.props));
-    }
-  };
-
-  handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
-  };
-
-  getStyle(): React.CSSProperties {
-    return {
-      width: this.props.column.width,
-      height: this.props.height,
-      left: this.props.column.left
-    };
   }
 
-  getCellClass() {
-    const { idx, column, lastFrozenColumnIndex, isRowSelected, tooltip, expandableOptions } = this.props;
-    return classNames(
-      column.cellClass,
-      'react-grid-Cell',
-      this.props.className, {
-        'react-grid-Cell--frozen': isFrozen(column),
-        'rdg-last--frozen': lastFrozenColumnIndex === idx,
-        'row-selected': isRowSelected,
-        'has-tooltip': !!tooltip,
-        'rdg-child-cell': expandableOptions && expandableOptions.subRowDetails && expandableOptions.treeDepth > 0
-      }
-    );
-  }
+  function getEvents() {
+    if (isSummaryRow) return null;
 
-  checkScroll() {
-    const { scrollLeft, column } = this.props;
-    const node = this.cell.current;
-    if (isFrozen(column) && node && node.style.transform != null) {
-      this.setScrollLeft(scrollLeft);
-    }
-  }
-
-  setScrollLeft(scrollLeft: number) {
-    const node = this.cell.current;
-    if (node) {
-      node.style.transform = `translateX(${scrollLeft}px)`;
-    }
-  }
-
-  removeScroll() {
-    const node = this.cell.current;
-    if (node) {
-      node.style.transform = 'none';
-    }
-  }
-
-  getEvents() {
-    const { column, cellMetaData, idx, rowIdx, rowData } = this.props;
     const columnEvents = column.events;
-    const allEvents: { [key: string]: Function } = {
-      onClick: this.handleCellClick,
-      onMouseDown: this.handleCellMouseDown,
-      onMouseEnter: this.handleCellMouseEnter,
-      onDoubleClick: this.handleCellDoubleClick,
-      onContextMenu: this.handleCellContextMenu,
-      onDragOver: this.handleDragOver
+    const allEvents: Record<string, Function> = {
+      onClick: handleCellClick,
+      onMouseDown: handleCellMouseDown,
+      onMouseEnter: handleCellMouseEnter,
+      onDoubleClick: handleCellDoubleClick,
+      onContextMenu: handleCellContextMenu,
+      onDragOver: handleDragOver
     };
 
     if (!columnEvents) {
       return allEvents;
     }
 
+    const eventInfo: ColumnEventInfo<R> = {
+      idx,
+      rowIdx,
+      column,
+      rowId: rowData[cellMetaData.rowKey]
+    };
+
     for (const event in columnEvents) {
       const columnEventHandler = columnEvents[event];
       if (columnEventHandler) {
-        const eventInfo: ColumnEventInfo<R> = {
-          idx,
-          rowIdx,
-          column,
-          rowId: rowData[cellMetaData.rowKey]
-        };
         if (allEvents.hasOwnProperty(event)) {
           const existingEvent = allEvents[event];
           allEvents[event] = (e: Event) => {
@@ -163,38 +99,57 @@ export default class Cell<R> extends React.PureComponent<Props<R>> implements Ce
     return allEvents;
   }
 
-  render() {
-    const { column, children, expandableOptions, cellMetaData, rowData } = this.props;
-    if (column.hidden) {
-      return null;
+  function wrapEvents(events: Record<string, Function> | null) {
+    for (const eventName in events) {
+      events[eventName] = wrapEvent(
+        events[eventName] as React.EventHandler<React.SyntheticEvent>,
+        (props as Record<string, Function>)[eventName] as React.EventHandler<React.SyntheticEvent>
+      );
     }
-
-    const style = this.getStyle();
-    const className = this.getCellClass();
-    const cellContent = children || <CellContent<R> {...this.props} />;
-    const events = this.getEvents();
-    const cellExpander = expandableOptions && expandableOptions.canExpand && (
-      <CellExpand
-        expanded={expandableOptions.expanded}
-        onCellExpand={this.handleCellExpand}
-      />
-    );
-
-    return (
-      <div
-        ref={this.cell}
-        className={className}
-        style={style}
-        {...events}
-      >
-        <CellActions<R>
-          column={column}
-          rowData={rowData}
-          cellMetaData={cellMetaData}
-        />
-        {cellExpander}
-        {cellContent}
-      </div>
-    );
+    return events;
   }
+
+  const colIsFrozen = isFrozen(column);
+  className = classNames(
+    column.cellClass,
+    'rdg-cell',
+    className, {
+      'rdg-cell-frozen': colIsFrozen,
+      'rdg-cell-frozen-last': colIsFrozen && column.idx === lastFrozenColumnIndex,
+      'rdg-child-cell': expandableOptions && expandableOptions.subRowDetails && expandableOptions.treeDepth > 0
+    }
+  );
+
+  const style: React.CSSProperties = {
+    width: column.width,
+    left: column.left
+  };
+
+  if (scrollLeft !== undefined) {
+    style.transform = `translateX(${scrollLeft}px)`;
+  }
+
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={style}
+      {...props}
+      {...wrapEvents(getEvents())}
+    >
+      {children || column.cellContentRenderer({
+        idx,
+        rowIdx,
+        rowData,
+        column,
+        cellMetaData,
+        expandableOptions,
+        isRowSelected,
+        onRowSelectionChange,
+        isSummaryRow
+      })}
+    </div>
+  );
 }
+
+export default memo(forwardRef(Cell)) as <R>(props: CellProps<R>) => JSX.Element;

@@ -1,28 +1,30 @@
 import React from 'react';
 import classNames from 'classnames';
 import { isElement } from 'react-is';
-import { isFrozen } from './ColumnUtils';
+import { isFrozen } from './utils/columnUtils';
 import { HeaderRowType } from './common/enums';
 import { CalculatedColumn, HeaderRowProps } from './common/types';
 
 function SimpleCellRenderer<R>({ column, rowType }: HeaderRowProps<R>) {
   const headerText = rowType === HeaderRowType.HEADER ? column.name : '';
-  return <div>{headerText}</div>;
+  return <>{headerText}</>;
 }
 
-interface Props<R> {
+export interface HeaderCellProps<R> {
   renderer?: React.ReactElement | React.ComponentType<HeaderRowProps<R>>;
   column: CalculatedColumn<R>;
+  lastFrozenColumnIndex: number;
   rowType: HeaderRowType;
   height: number;
   onResize(column: CalculatedColumn<R>, width: number): void;
-  onResizeEnd(column: CalculatedColumn<R>, width: number): void;
   onHeaderDrop?(): void;
+  allRowsSelected: boolean;
+  onAllRowsSelectionChange(checked: boolean): void;
   draggableHeaderCell?: React.ComponentType<{ column: CalculatedColumn<R>; onHeaderDrop(): void }>;
   className?: string;
 }
 
-export default class HeaderCell<R> extends React.Component<Props<R>> {
+export default class HeaderCell<R> extends React.Component<HeaderCellProps<R>> {
   private readonly cell = React.createRef<HTMLDivElement>();
 
   private onMouseDown = (event: React.MouseEvent) => {
@@ -41,10 +43,9 @@ export default class HeaderCell<R> extends React.Component<Props<R>> {
       this.onResize(event.clientX + offset);
     };
 
-    const onMouseUp = (event: MouseEvent) => {
+    const onMouseUp = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
-      this.onResizeEnd(event.clientX + offset);
     };
 
     event.preventDefault();
@@ -81,7 +82,6 @@ export default class HeaderCell<R> extends React.Component<Props<R>> {
       if (!touch) return;
       window.removeEventListener('touchmove', onTouchMove);
       window.removeEventListener('touchend', onTouchEnd);
-      this.onResizeEnd(touch.clientX + offset);
     };
 
     window.addEventListener('touchmove', onTouchMove);
@@ -89,18 +89,10 @@ export default class HeaderCell<R> extends React.Component<Props<R>> {
   };
 
   private onResize(x: number) {
-    const { onResize } = this.props;
-    if (onResize) {
-      const width = this.getWidthFromMouseEvent(x);
-      if (width > 0) {
-        onResize(this.props.column, width);
-      }
-    }
-  }
-
-  private onResizeEnd(x: number) {
     const width = this.getWidthFromMouseEvent(x);
-    this.props.onResizeEnd(this.props.column, width);
+    if (width > 0) {
+      this.props.onResize(this.props.column, width);
+    }
   }
 
   private getWidthFromMouseEvent(x: number): number {
@@ -108,7 +100,7 @@ export default class HeaderCell<R> extends React.Component<Props<R>> {
   }
 
   getCell() {
-    const { height, column, rowType } = this.props;
+    const { height, column, rowType, allRowsSelected, onAllRowsSelectionChange } = this.props;
     const renderer = this.props.renderer || SimpleCellRenderer;
     if (isElement(renderer)) {
       // if it is a string, it's an HTML element, and column is not a valid property, so only pass height
@@ -117,7 +109,7 @@ export default class HeaderCell<R> extends React.Component<Props<R>> {
       }
       return React.cloneElement(renderer, { column, height });
     }
-    return React.createElement(renderer, { column, rowType });
+    return React.createElement(renderer, { column, rowType, allRowsSelected, onAllRowsSelectionChange });
   }
 
   setScrollLeft(scrollLeft: number) {
@@ -135,28 +127,27 @@ export default class HeaderCell<R> extends React.Component<Props<R>> {
   }
 
   render() {
-    const { column, rowType, height } = this.props;
+    const { column, rowType } = this.props;
+    const colIsFrozen = isFrozen(column);
 
-    const className = classNames('react-grid-HeaderCell', {
-      'rdg-header-cell-resizable': column.resizable,
-      'react-grid-HeaderCell--frozen': isFrozen(column)
+    const className = classNames('rdg-cell', {
+      'rdg-cell-frozen': colIsFrozen,
+      'rdg-cell-frozen-last': colIsFrozen && column.idx === this.props.lastFrozenColumnIndex
     }, this.props.className, column.cellClass);
-
-    const style: React.CSSProperties = {
-      width: column.width,
-      left: column.left,
-      height
-    };
 
     const cell = (
       <div
-        className={className}
-        style={style}
         ref={this.cell}
+        className={className}
+        style={{
+          width: column.width,
+          left: column.left
+        }}
         onMouseDown={column.resizable ? this.onMouseDown : undefined}
         onTouchStart={column.resizable ? this.onTouchStart : undefined}
       >
         {this.getCell()}
+        {column.resizable && <div className="rdg-header-cell-resizer" />}
       </div>
     );
 

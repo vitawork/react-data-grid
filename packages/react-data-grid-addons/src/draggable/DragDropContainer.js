@@ -1,12 +1,9 @@
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { _utils } from 'react-data-grid';
 
 import html5DragDropContext from '../shared/html5DragDropContext';
 import DraggableHeaderCell from './DraggableHeaderCell';
 import RowDragLayer from './RowDragLayer';
-
-const { isColumnsImmutable } = _utils;
 
 class DraggableContainer extends Component {
   static propTypes = {
@@ -33,16 +30,15 @@ class DraggableContainer extends Component {
   render() {
     const grid = this.renderGrid();
     const rowGetter = this.props.getDragPreviewRow || grid.props.rowGetter;
-    const rowsCount = grid.props.rowsCount;
-    const columns = grid.props.columns;
+    const { rowsCount, columns } = grid.props;
     const rows = this.getRows(rowsCount, rowGetter);
     return (
       <div>
         {grid}
         <RowDragLayer
-          rowSelection={grid.props.rowSelection}
+          selectedRows={grid.props.selectedRows}
           rows={rows}
-          columns={isColumnsImmutable(columns) ? columns.toArray() : columns}
+          columns={columns}
         />
       </div>
     );

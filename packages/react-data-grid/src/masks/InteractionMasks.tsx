@@ -1,4 +1,5 @@
 import React, { cloneElement } from 'react';
+import { createPortal } from 'react-dom';
 import { isElement } from 'react-is';
 
 // Components
@@ -11,7 +12,7 @@ import EditorContainer from '../common/editors/EditorContainer';
 import EditorPortal from '../common/editors/EditorPortal';
 
 // Utils
-import { isKeyPrintable, isCtrlKeyHeldDown } from '../common/utils/keyboardUtils';
+import { isKeyPrintable, isCtrlKeyHeldDown } from '../utils/keyboardUtils';
 import {
   getSelectedDimensions,
   getSelectedCellValue,
@@ -21,16 +22,22 @@ import {
   isSelectedCellEditable,
   selectedRangeIsSingleCell,
   NextSelectedCellPosition
-} from '../utils/SelectedCellUtils';
-import { isFrozen } from '../ColumnUtils';
-import keyCodes from '../KeyCodes';
+} from '../utils/selectedCellUtils';
 
 // Types
 import { UpdateActions, CellNavigationMode, EventTypes } from '../common/enums';
-import { CalculatedColumn, Position, SelectedRange, Dimension, InteractionMasksMetaData, CommitEvent } from '../common/types';
+import { CalculatedColumn, Position, SelectedRange, Dimension, InteractionMasksMetaData, CommitEvent, ColumnMetrics } from '../common/types';
 import { CanvasProps } from '../Canvas';
 
-const SCROLL_CELL_BUFFER = 2;
+export enum KeyCodes {
+  Backspace = 8,
+  Tab = 9,
+  Enter = 13,
+  Escape = 27,
+  Delete = 46,
+  c = 67,
+  v = 86
+}
 
 interface NavAction {
   getNext(current: Position): Position;
@@ -38,33 +45,29 @@ interface NavAction {
   onHitBoundary(next: Position): void;
 }
 
-type SharedCanvasProps<R> = Pick<CanvasProps<R>,
-'rowGetter'
+type SharedCanvasProps<R, K extends keyof R> = Pick<CanvasProps<R, K>,
+| 'rowGetter'
 | 'rowsCount'
 | 'rowHeight'
-| 'columns'
-| 'rowVisibleStartIdx'
-| 'rowVisibleEndIdx'
-| 'colVisibleStartIdx'
-| 'colVisibleEndIdx'
 | 'enableCellSelect'
 | 'enableCellAutoFocus'
 | 'cellNavigationMode'
 | 'eventBus'
 | 'contextMenu'
 | 'editorPortalTarget'
->;
+> & Pick<ColumnMetrics<R>, 'columns'>;
 
-export interface InteractionMasksProps<R> extends SharedCanvasProps<R>, InteractionMasksMetaData<R> {
-  onHitTopBoundary(): void;
-  onHitBottomBoundary(): void;
+export interface InteractionMasksProps<R, K extends keyof R> extends SharedCanvasProps<R, K>, InteractionMasksMetaData<R> {
+  onHitTopBoundary(position: Position): void;
+  onHitBottomBoundary(position: Position): void;
   onHitLeftBoundary(position: Position): void;
   onHitRightBoundary(position: Position): void;
+  height: number;
   scrollLeft: number;
   scrollTop: number;
-  getRowHeight(rowIdx: number): number;
-  getRowTop(rowIdx: number): number;
   getRowColumns(rowIdx: number): CalculatedColumn<R>[];
+  colVisibleStartIdx: number;
+  colVisibleEndIdx: number;
 }
 
 export interface InteractionMasksState {
@@ -77,7 +80,7 @@ export interface InteractionMasksState {
   firstEditorKeyPress: string | null;
 }
 
-export default class InteractionMasks<R> extends React.Component<InteractionMasksProps<R>, InteractionMasksState> {
+export default class InteractionMasks<R, K extends keyof R> extends React.Component<InteractionMasksProps<R, K>, InteractionMasksState> {
   static displayName = 'InteractionMasks';
 
   readonly state: Readonly<InteractionMasksState> = {
@@ -104,11 +107,10 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
   };
 
   private readonly selectionMask = React.createRef<HTMLDivElement>();
-  private readonly copyMask = React.createRef<HTMLDivElement>();
 
   private unsubscribeEventHandlers: Array<() => void> = [];
 
-  componentDidUpdate(prevProps: InteractionMasksProps<R>, prevState: InteractionMasksState) {
+  componentDidUpdate(prevProps: InteractionMasksProps<R, K>, prevState: InteractionMasksState) {
     const { selectedPosition, isEditorEnabled } = this.state;
     const { selectedPosition: prevSelectedPosition, isEditorEnabled: prevIsEditorEnabled } = prevState;
     const isSelectedPositionChanged = selectedPosition !== prevSelectedPosition && (selectedPosition.rowIdx !== prevSelectedPosition.rowIdx || selectedPosition.idx !== prevSelectedPosition.idx);
@@ -172,42 +174,16 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
     };
   }
 
-  setMaskScollLeft(mask: HTMLDivElement | null, position: Position | null, scrollLeft: number): void {
-    if (!mask || !position) return;
-
-    const { idx, rowIdx } = position;
-    if (!(idx >= 0 && rowIdx >= 0)) return;
-
-    const column = this.props.columns[idx];
-    if (!isFrozen(column)) return;
-
-    const top = this.props.getRowTop(rowIdx);
-    const left = scrollLeft + column.left;
-    const transform = `translate(${left}px, ${top}px)`;
-    if (mask.style.transform !== transform) {
-      mask.style.transform = transform;
-    }
-  }
-
-  /**
-   * Sets the position of SelectionMask and CopyMask components when the canvas is scrolled
-   * This is only required on the frozen columns
-   */
-  setScrollLeft(scrollLeft: number): void {
-    this.setMaskScollLeft(this.selectionMask.current, this.state.selectedPosition, scrollLeft);
-    this.setMaskScollLeft(this.copyMask.current, this.state.copiedPosition, scrollLeft);
-  }
-
   onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (isCtrlKeyHeldDown(e)) {
       this.onPressKeyWithCtrl(e);
-    } else if (e.keyCode === keyCodes.Escape) {
+    } else if (e.keyCode === KeyCodes.Escape) {
       this.onPressEscape();
-    } else if (e.keyCode === keyCodes.Tab) {
+    } else if (e.keyCode === KeyCodes.Tab) {
       this.onPressTab(e);
     } else if (this.isKeyboardNavigationEvent(e)) {
       this.changeCellFromEvent(e);
-    } else if (isKeyPrintable(e.keyCode) || ([keyCodes.Backspace, keyCodes.Delete, keyCodes.Enter] as number[]).includes(e.keyCode)) {
+    } else if (isKeyPrintable(e.keyCode) || ([KeyCodes.Backspace, KeyCodes.Delete, KeyCodes.Enter] as number[]).includes(e.keyCode)) {
       this.openEditor(e);
     }
   };
@@ -238,12 +214,12 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
 
   onPressKeyWithCtrl({ keyCode }: React.KeyboardEvent<HTMLDivElement>): void {
     if (this.copyPasteEnabled()) {
-      if (keyCode === keyCodes.c) {
+      if (keyCode === KeyCodes.c) {
         const { columns, rowGetter } = this.props;
         const { selectedPosition } = this.state;
         const value = getSelectedCellValue({ selectedPosition, columns, rowGetter });
         this.handleCopy(value);
-      } else if (keyCode === keyCodes.v) {
+      } else if (keyCode === KeyCodes.v) {
         this.handlePaste();
       }
     }
@@ -331,9 +307,13 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
   }
 
   getKeyNavActionFromEvent(e: React.KeyboardEvent<HTMLDivElement>): NavAction | null {
-    const { rowVisibleEndIdx, rowVisibleStartIdx, colVisibleEndIdx, colVisibleStartIdx, onHitBottomBoundary, onHitRightBoundary, onHitLeftBoundary, onHitTopBoundary } = this.props;
-    const isCellAtBottomBoundary = (cell: Position): boolean => cell.rowIdx >= rowVisibleEndIdx - SCROLL_CELL_BUFFER;
-    const isCellAtTopBoundary = (cell: Position): boolean => cell.rowIdx !== 0 && cell.rowIdx <= rowVisibleStartIdx - 1;
+    const { colVisibleEndIdx, colVisibleStartIdx, onHitBottomBoundary, onHitRightBoundary, onHitLeftBoundary, onHitTopBoundary } = this.props;
+    const isCellAtBottomBoundary = (cell: Position): boolean => {
+      return (cell.rowIdx + 1) * this.props.rowHeight > this.props.scrollTop + this.props.height;
+    };
+    const isCellAtTopBoundary = (cell: Position): boolean => {
+      return cell.rowIdx * this.props.rowHeight < this.props.scrollTop;
+    };
     const isCellAtRightBoundary = (cell: Position): boolean => cell.idx !== 0 && cell.idx >= colVisibleEndIdx - 1;
     const isCellAtLeftBoundary = (cell: Position): boolean => cell.idx !== 0 && cell.idx <= colVisibleStartIdx + 1;
 
@@ -354,7 +334,7 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
         onHitRightBoundary(next);
         // Selected cell can hit the bottom boundary when the cellNavigationMode is 'changeRow'
         if (isCellAtBottomBoundary(next)) {
-          onHitBottomBoundary();
+          onHitBottomBoundary(next);
         }
       }
     };
@@ -365,12 +345,12 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
         onHitLeftBoundary(next);
         // Selected cell can hit the top boundary when the cellNavigationMode is 'changeRow'
         if (isCellAtTopBoundary(next)) {
-          onHitTopBoundary();
+          onHitTopBoundary(next);
         }
       }
     };
 
-    if (e.keyCode === keyCodes.Tab) {
+    if (e.keyCode === KeyCodes.Tab) {
       return e.shiftKey === true ? ArrowLeft : ArrowRight;
     }
 
@@ -385,7 +365,7 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
 
   changeCellFromEvent(e: React.KeyboardEvent<HTMLDivElement>): void {
     e.preventDefault();
-    const isTab = e.keyCode === keyCodes.Tab;
+    const isTab = e.keyCode === KeyCodes.Tab;
     const isShift = e.shiftKey;
 
     if (isTab) {
@@ -458,11 +438,11 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
     return document.activeElement === document.body;
   }
 
-  focus(): void {
+  focus = (): void => {
     if (this.selectionMask.current && !this.isFocused()) {
       this.selectionMask.current.focus();
     }
-  }
+  };
 
   selectFirstCell(): void {
     this.selectCell({ rowIdx: 0, idx: 0 });
@@ -600,10 +580,8 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
     const column = columns[draggedPosition.idx];
     const value = getSelectedCellValue({ selectedPosition: draggedPosition, columns, rowGetter });
     const cellKey = column.key;
-    const fromRow = rowIdx < overRowIdx ? rowIdx : overRowIdx;
-    const toRow = rowIdx > overRowIdx ? rowIdx : overRowIdx;
 
-    onGridRowsUpdated(cellKey, fromRow, toRow, { [cellKey]: value }, UpdateActions.CELL_DRAG);
+    onGridRowsUpdated(cellKey, rowIdx, overRowIdx, { [cellKey]: value }, UpdateActions.CELL_DRAG);
 
     this.setState({
       draggedPosition: null
@@ -627,11 +605,14 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
     this.closeEditor();
   };
 
-  getSelectedDimensions = (selectedPosition: Position, useGridColumns?: boolean): Dimension => {
-    const { scrollLeft, getRowHeight, getRowTop, getRowColumns, columns: gridColumns } = this.props;
-    const columns = useGridColumns ? gridColumns : getRowColumns(selectedPosition.rowIdx);
-    const top = getRowTop(selectedPosition.rowIdx);
-    const rowHeight = getRowHeight(selectedPosition.rowIdx);
+  getRowTop(rowIdx: number): number {
+    return rowIdx * this.props.rowHeight;
+  }
+
+  getSelectedDimensions = (selectedPosition: Position, useGridColumns = false): Dimension => {
+    const { scrollLeft, rowHeight, getRowColumns } = this.props;
+    const columns = useGridColumns ? this.props.columns : getRowColumns(selectedPosition.rowIdx);
+    const top = this.getRowTop(selectedPosition.rowIdx);
     const dimension = getSelectedDimensions({ selectedPosition, columns, scrollLeft, rowHeight });
     dimension.top = top;
     return dimension;
@@ -672,7 +653,7 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
   }
 
   render() {
-    const { rowGetter, contextMenu, getRowColumns, scrollLeft, scrollTop } = this.props;
+    const { rowGetter, contextMenu, getRowColumns, scrollLeft, scrollTop, editorPortalTarget } = this.props;
     const { isEditorEnabled, firstEditorKeyPress, selectedPosition, draggedPosition, copiedPosition } = this.state;
     const rowData = rowGetter(selectedPosition.rowIdx);
     const columns = getRowColumns(selectedPosition.rowIdx);
@@ -681,12 +662,7 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
         onKeyDown={this.onKeyDown}
         onFocus={this.onFocus}
       >
-        {copiedPosition && (
-          <CopyMask
-            {...this.getSelectedDimensions(copiedPosition)}
-            ref={this.copyMask}
-          />
-        )}
+        {copiedPosition && <CopyMask {...this.getSelectedDimensions(copiedPosition)} />}
         {draggedPosition && (
           <DragMask
             draggedPosition={draggedPosition}
@@ -695,11 +671,10 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
         )}
         {selectedRangeIsSingleCell(this.state.selectedRange)
           ? this.renderSingleCellSelectView()
-          : this.renderCellRangeSelectView()
-        }
+          : this.renderCellRangeSelectView()}
         {isEditorEnabled && (
-          <EditorPortal target={this.props.editorPortalTarget}>
-            <EditorContainer<R>
+          <EditorPortal target={editorPortalTarget}>
+            <EditorContainer<R, K>
               firstEditorKeyPress={firstEditorKeyPress}
               onCommit={this.onCommit}
               onCommitCancel={this.onCommitCancel}
@@ -714,7 +689,10 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
             />
           </EditorPortal>
         )}
-        {isElement(contextMenu) && cloneElement(contextMenu, { ...selectedPosition })}
+        {isElement(contextMenu) && createPortal(
+          cloneElement(contextMenu, { ...selectedPosition }),
+          editorPortalTarget
+        )}
       </div>
     );
   }

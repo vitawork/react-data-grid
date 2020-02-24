@@ -1,27 +1,16 @@
-import React from 'react';
 import classNames from 'classnames';
+import React from 'react';
 
-import rowComparer from './common/utils/RowComparer';
 import Cell from './Cell';
-import { isFrozen } from './ColumnUtils';
-import * as rowUtils from './RowUtils';
-import { RowRenderer, RowRendererProps, CellRenderer, CellRendererProps, CalculatedColumn } from './common/types';
+import { IRowRendererProps } from './common/types';
+import { isFrozen } from './utils/columnUtils';
 
-export default class Row<R> extends React.Component<RowRendererProps<R>> implements RowRenderer<R> {
+export default class Row<R> extends React.Component<IRowRendererProps<R>> {
   static displayName = 'Row';
 
   static defaultProps = {
-    cellRenderer: Cell,
-    isSelected: false,
-    height: 35
+    cellRenderer: Cell
   };
-
-  private readonly row = React.createRef<HTMLDivElement>();
-  private readonly cells = new Map<keyof R, CellRenderer>();
-
-  shouldComponentUpdate(nextProps: RowRendererProps<R>) {
-    return rowComparer(nextProps, this.props);
-  }
 
   handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     // Prevent default to allow drop
@@ -41,53 +30,50 @@ export default class Row<R> extends React.Component<RowRendererProps<R>> impleme
     e.preventDefault();
   };
 
-  getCell(column: CalculatedColumn<R>) {
-    const Renderer = this.props.cellRenderer!;
-    const { idx, cellMetaData, isScrolling, row, isSelected, scrollLeft, lastFrozenColumnIndex } = this.props;
-    const { key } = column;
-
-    const cellProps: CellRendererProps<R> & { ref: (cell: CellRenderer | null) => void } = {
-      ref: (cell) => cell ? this.cells.set(key, cell) : this.cells.delete(key),
-      idx: column.idx,
-      rowIdx: idx,
-      height: this.getRowHeight(),
-      column,
-      cellMetaData,
-      value: this.getCellValue(key || String(column.idx) as keyof R) as R[keyof R], // FIXME: fix types
-      rowData: row,
-      isRowSelected: isSelected,
-      expandableOptions: this.getExpandableOptions(key),
-      isScrolling,
-      scrollLeft,
-      lastFrozenColumnIndex
-    };
-
-    return <Renderer key={`${key as keyof R}-${idx}`} {...cellProps} />; // FIXME: fix key type
-  }
-
   getCells() {
-    const { colOverscanStartIdx, colOverscanEndIdx, columns } = this.props;
-    const frozenColumns = columns.filter(c => isFrozen(c));
-    const nonFrozenColumn = columns.slice(colOverscanStartIdx, colOverscanEndIdx + 1).filter(c => !isFrozen(c));
-    return nonFrozenColumn.concat(frozenColumns).map(c => this.getCell(c));
-  }
+    const {
+      cellMetaData,
+      colOverscanEndIdx,
+      colOverscanStartIdx,
+      columns,
+      idx,
+      isRowSelected,
+      lastFrozenColumnIndex,
+      onRowSelectionChange,
+      row,
+      scrollLeft,
+      isSummaryRow
+    } = this.props;
+    const Renderer = this.props.cellRenderer!;
+    const cellElements = [];
 
-  getRowTop(): number {
-    const { current } = this.row;
-    return current ? current.offsetTop : 0;
-  }
+    for (let colIdx = 0; colIdx <= colOverscanEndIdx; colIdx++) {
+      const column = columns[colIdx];
+      const colIsFrozen = isFrozen(column);
 
-  getRowHeight(): number {
-    return this.props.height;
-  }
+      if (colIdx < colOverscanStartIdx && !colIsFrozen) continue;
 
-  getCellValue(key: keyof R) {
-    const { isSelected, row } = this.props;
-    if (key === 'select-row') {
-      return isSelected;
+      const { key } = column;
+
+      cellElements.push(
+        <Renderer
+          key={key as string} // FIXME: fix key type
+          idx={colIdx}
+          rowIdx={idx}
+          column={column}
+          lastFrozenColumnIndex={lastFrozenColumnIndex}
+          cellMetaData={cellMetaData}
+          rowData={row}
+          expandableOptions={this.getExpandableOptions(key)}
+          scrollLeft={colIsFrozen && typeof scrollLeft === 'number' ? scrollLeft : undefined}
+          isRowSelected={isRowSelected}
+          onRowSelectionChange={onRowSelectionChange}
+          isSummaryRow={isSummaryRow}
+        />
+      );
     }
 
-    return rowUtils.get(row, key);
+    return cellElements;
   }
 
   getExpandableOptions(columnKey: keyof R) {
@@ -105,32 +91,26 @@ export default class Row<R> extends React.Component<RowRendererProps<R>> impleme
     };
   }
 
-  setScrollLeft(scrollLeft: number) {
-    for (const column of this.props.columns) {
-      const { key } = column;
-      if (isFrozen(column) && this.cells.has(key)) {
-        this.cells.get(key)!.setScrollLeft(scrollLeft);
-      }
-    }
-  }
-
   render() {
+    const { idx, isRowSelected, extraClasses, isSummaryRow } = this.props;
     const className = classNames(
-      'react-grid-Row',
-      `react-grid-Row--${this.props.idx % 2 === 0 ? 'even' : 'odd'}`,
-      { 'row-selected': this.props.isSelected },
-      this.props.extraClasses,
-      { 'rdg-scrolling': this.props.isScrolling }
+      'rdg-row',
+      `rdg-row-${idx % 2 === 0 ? 'even' : 'odd'}`,
+      { 'rdg-row-selected': isRowSelected },
+      extraClasses
     );
+
+    const events = !isSummaryRow && {
+      onDragEnter: this.handleDragEnter,
+      onDragOver: this.handleDragOver,
+      onDrop: this.handleDrop
+    };
 
     return (
       <div
-        ref={this.row}
         className={className}
-        style={{ height: this.getRowHeight() }}
-        onDragEnter={this.handleDragEnter}
-        onDragOver={this.handleDragOver}
-        onDrop={this.handleDrop}
+        style={{ width: this.props.width, height: this.props.height }}
+        {...events}
       >
         {this.getCells()}
       </div>

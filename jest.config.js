@@ -23,17 +23,14 @@ module.exports = {
   moduleNameMapper: {
     '^react-data-grid$': '<rootDir>/packages/react-data-grid/src/',
     '^react-data-grid-addons$': '<rootDir>/packages/react-data-grid-addons/src/',
+    '^@material-ui/icons$': '<rootDir>/test/iconsMock.ts',
     '\\.css$': '<rootDir>/test/fileMock.js'
   },
   setupFiles: [
     '<rootDir>/test/setupTests.js'
   ],
-  setupFilesAfterEnv: [
-    '@testing-library/react/cleanup-after-each'
-  ],
   testMatch: [
     '<rootDir>/packages/*/src/**/*.spec.(js|ts|tsx)',
-    '<rootDir>/examples/**/*.spec.(js|ts|tsx)',
     '<rootDir>/tests/**/*.test.(ts|tsx)'
   ]
 };

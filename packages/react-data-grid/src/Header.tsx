@@ -1,167 +1,114 @@
-import React from 'react';
-import ReactDOM from 'react-dom';
-import classNames from 'classnames';
+import React, { forwardRef, useRef, useImperativeHandle } from 'react';
 
 import HeaderRow from './HeaderRow';
-import { resizeColumn } from './ColumnMetrics';
-import getScrollbarSize from './getScrollbarSize';
-import { HeaderRowType } from './common/enums';
-import { CalculatedColumn, ColumnMetrics } from './common/types';
-import { GridProps } from './Grid';
+import { getScrollbarSize, isPositionStickySupported } from './utils';
+import { CalculatedColumn, HeaderRowData, ColumnMetrics, CellMetaData } from './common/types';
+import { DEFINE_SORT } from './common/enums';
+import { DataGridProps } from './DataGrid';
 
-type SharedGridProps<R> = Pick<GridProps<R>,
-'columnMetrics'
-| 'onColumnResize'
-| 'rowHeight'
-| 'totalWidth'
-| 'headerRows'
+type SharedDataGridProps<R, K extends keyof R> = Pick<DataGridProps<R, K>,
+| 'draggableHeaderCell'
+| 'getValidFilterValues'
+| 'rowGetter'
+| 'rowsCount'
+| 'onHeaderDrop'
+| 'onSelectedRowsChange'
 | 'sortColumn'
 | 'sortDirection'
-| 'draggableHeaderCell'
-| 'onSort'
-| 'onHeaderDrop'
-| 'getValidFilterValues'
-| 'cellMetaData'
->;
+> & Required<Pick<DataGridProps<R, K>,
+| 'rowKey'
+>>;
 
-export type HeaderProps<R> = SharedGridProps<R>;
-
-interface State<R> {
-  resizing: { column: CalculatedColumn<R>; columnMetrics: ColumnMetrics<R> } | null;
+export interface HeaderProps<R, K extends keyof R> extends SharedDataGridProps<R, K> {
+  allRowsSelected: boolean;
+  columnMetrics: ColumnMetrics<R>;
+  headerRows: [HeaderRowData<R>, HeaderRowData<R> | undefined];
+  cellMetaData: CellMetaData<R>;
+  onSort?(columnKey: keyof R, direction: DEFINE_SORT): void;
+  onColumnResize(column: CalculatedColumn<R>, width: number): void;
 }
 
-export default class Header<R> extends React.Component<HeaderProps<R>, State<R>> {
-  readonly state: Readonly<State<R>> = { resizing: null };
+export interface HeaderHandle {
+  setScrollLeft(scrollLeft: number): void;
+}
 
-  private readonly row = React.createRef<HeaderRow<R>>();
-  private readonly filterRow = React.createRef<HeaderRow<R>>();
+export default forwardRef(function Header<R, K extends keyof R>(props: HeaderProps<R, K>, ref: React.Ref<HeaderHandle>) {
+  const headerRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HeaderRow<R, K>>(null);
+  const filterRowRef = useRef<HeaderRow<R, K>>(null);
 
-  componentWillReceiveProps(): void {
-    this.setState({ resizing: null });
-  }
-
-  onColumnResize = (column: CalculatedColumn<R>, width: number): void => {
-    const pos = this.getColumnPosition(column);
-
-    if (pos === null) return;
-
-    const prevColumnMetrics = this.state.resizing ? this.state.resizing.columnMetrics : this.props.columnMetrics;
-    const columnMetrics = resizeColumn({ ...prevColumnMetrics }, pos, width);
-
-    // we don't want to influence scrollLeft while resizing
-    if (columnMetrics.totalWidth < prevColumnMetrics.totalWidth) {
-      columnMetrics.totalWidth = prevColumnMetrics.totalWidth;
-    }
-
-    this.setState({
-      resizing: {
-        column: columnMetrics.columns[pos],
-        columnMetrics
+  useImperativeHandle(ref, () => ({
+    setScrollLeft(scrollLeft: number): void {
+      headerRef.current!.scrollLeft = scrollLeft;
+      if (isPositionStickySupported()) return;
+      rowRef.current!.setScrollLeft(scrollLeft);
+      if (filterRowRef.current) {
+        filterRowRef.current.setScrollLeft(scrollLeft);
       }
-    });
-  };
-
-  onColumnResizeEnd = (column: CalculatedColumn<R>, width: number): void => {
-    const pos = this.getColumnPosition(column);
-    if (pos === null) return;
-    this.props.onColumnResize(pos, width || column.width);
-  };
-
-  getHeaderRows() {
-    const columnMetrics = this.getColumnMetrics();
-
-    return this.props.headerRows.map((row, index) => {
-      // To allow header filters to be visible
-      const isFilterRow = row.rowType === HeaderRowType.FILTER;
-      const rowHeight = isFilterRow ? '500px' : 'auto';
-      const scrollbarSize = getScrollbarSize() > 0 ? getScrollbarSize() : 0;
-      const updatedWidth = typeof this.props.totalWidth === 'number'
-        ? this.props.totalWidth - scrollbarSize
-        : this.props.totalWidth;
-      const headerRowStyle: React.CSSProperties = {
-        top: this.getCombinedHeaderHeights(index),
-        width: updatedWidth,
-        minHeight: rowHeight
-      };
-
-      return (
-        <HeaderRow<R>
-          key={row.rowType}
-          ref={isFilterRow ? this.filterRow : this.row}
-          rowType={row.rowType}
-          style={headerRowStyle}
-          onColumnResize={this.onColumnResize}
-          onColumnResizeEnd={this.onColumnResizeEnd}
-          width={columnMetrics.width}
-          height={row.height || this.props.rowHeight}
-          columns={columnMetrics.columns}
-          draggableHeaderCell={this.props.draggableHeaderCell}
-          filterable={row.filterable}
-          onFilterChange={row.onFilterChange}
-          onHeaderDrop={this.props.onHeaderDrop}
-          sortColumn={this.props.sortColumn}
-          sortDirection={this.props.sortDirection}
-          onSort={this.props.onSort}
-          getValidFilterValues={this.props.getValidFilterValues}
-        />
-      );
-    });
-  }
-
-  getColumnMetrics(): ColumnMetrics<R> {
-    if (this.state.resizing) {
-      return this.state.resizing.columnMetrics;
     }
-    return this.props.columnMetrics;
-  }
+  }), []);
 
-  getColumnPosition(column: CalculatedColumn<R>): number | null {
-    const { columns } = this.getColumnMetrics();
-    const idx = columns.findIndex(c => c.key === column.key);
-    return idx === -1 ? null : idx;
-  }
+  function handleAllRowsSelectionChange(checked: boolean) {
+    if (!props.onSelectedRowsChange) return;
 
-  getCombinedHeaderHeights(until?: number): number {
-    const stopAt = typeof until === 'number'
-      ? until
-      : this.props.headerRows.length;
-
-    let height = 0;
-    for (let index = 0; index < stopAt; index++) {
-      height += this.props.headerRows[index].height || this.props.rowHeight;
+    const newSelectedRows = new Set<R[K]>();
+    if (checked) {
+      for (let i = 0; i < props.rowsCount; i++) {
+        newSelectedRows.add(props.rowGetter(i)[props.rowKey]);
+      }
     }
-    return height;
+
+    props.onSelectedRowsChange(newSelectedRows);
   }
 
-  setScrollLeft(scrollLeft: number): void {
-    const node = ReactDOM.findDOMNode(this.row.current) as Element;
-    node.scrollLeft = scrollLeft;
-    this.row.current!.setScrollLeft(scrollLeft);
-    if (this.filterRow.current) {
-      const nodeFilters = ReactDOM.findDOMNode(this.filterRow.current) as Element;
-      nodeFilters.scrollLeft = scrollLeft;
-      this.filterRow.current.setScrollLeft(scrollLeft);
+  function getHeaderRow(row: HeaderRowData<R>, ref?: React.RefObject<HeaderRow<R, K>>) {
+    return (
+      <HeaderRow<R, K>
+        key={row.rowType}
+        ref={ref}
+        rowType={row.rowType}
+        onColumnResize={props.onColumnResize}
+        width={props.columnMetrics.totalColumnWidth + getScrollbarSize()}
+        height={row.height}
+        columns={props.columnMetrics.columns}
+        lastFrozenColumnIndex={props.columnMetrics.lastFrozenColumnIndex}
+        draggableHeaderCell={props.draggableHeaderCell}
+        filterable={row.filterable}
+        onFilterChange={row.onFilterChange}
+        onHeaderDrop={props.onHeaderDrop}
+        allRowsSelected={props.allRowsSelected}
+        onAllRowsSelectionChange={handleAllRowsSelectionChange}
+        sortColumn={props.sortColumn}
+        sortDirection={props.sortDirection}
+        onSort={props.onSort}
+        getValidFilterValues={props.getValidFilterValues}
+      />
+    );
+  }
+
+  function getHeaderRows() {
+    const setRef = !isPositionStickySupported();
+    const { headerRows } = props;
+    const rows = [getHeaderRow(headerRows[0], setRef ? rowRef : undefined)];
+    if (headerRows[1]) {
+      rows.push(getHeaderRow(headerRows[1], setRef ? filterRowRef : undefined));
     }
+
+    return rows;
   }
 
   // Set the cell selection to -1 x -1 when clicking on the header
-  onHeaderClick = (): void => {
-    this.props.cellMetaData.onCellClick({ rowIdx: -1, idx: -1 });
-  };
-
-  render() {
-    const className = classNames('react-grid-Header', {
-      'react-grid-Header--resizing': !!this.state.resizing
-    });
-
-    return (
-      <div
-        style={{ height: this.getCombinedHeaderHeights() }}
-        className={className}
-        onClick={this.onHeaderClick}
-      >
-        {this.getHeaderRows()}
-      </div>
-    );
+  function onHeaderClick(): void {
+    props.cellMetaData.onCellClick({ rowIdx: -1, idx: -1 });
   }
-}
+
+  return (
+    <div
+      ref={headerRef}
+      className="rdg-header"
+      onClick={onHeaderClick}
+    >
+      {getHeaderRows()}
+    </div>
+  );
+} as React.RefForwardingComponent<HeaderHandle, HeaderProps<{ [key: string]: unknown }, string>>) as <R, K extends keyof R>(props: HeaderProps<R, K> & { ref?: React.Ref<HeaderHandle> }) => JSX.Element;

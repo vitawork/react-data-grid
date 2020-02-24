@@ -2,12 +2,12 @@ import React from 'react';
 import { shallow } from 'enzyme';
 import SortableHeaderCell, { Props } from '../SortableHeaderCell';
 import { HeaderRowType, DEFINE_SORT } from '../../../enums';
-import { Column } from '../../../types';
+import { valueCellContentRenderer } from '../../../../Cell/cellContentRenderers';
 
 interface Row { col1: string }
 
 describe('<SortableHeaderCell/>', () => {
-  const setup = (overrideProps?: Partial<Props<Row>>, overrideColumn?: Partial<Column<Row>>) => {
+  const setup = (overrideProps?: Partial<Props<Row>>, overrideColumn = {}) => {
     const props: Props<Row> = {
       column: {
         idx: 0,
@@ -15,12 +15,15 @@ describe('<SortableHeaderCell/>', () => {
         key: 'col1',
         width: 100,
         left: 0,
+        cellContentRenderer: valueCellContentRenderer,
         ...overrideColumn
       },
       rowType: HeaderRowType.HEADER,
       onSort: jest.fn(),
       sortDirection: DEFINE_SORT.NONE,
       sortDescendingFirst: false,
+      allRowsSelected: false,
+      onAllRowsSelectionChange() {},
       ...overrideProps
     };
     const wrapper = shallow(<SortableHeaderCell {...props} />);

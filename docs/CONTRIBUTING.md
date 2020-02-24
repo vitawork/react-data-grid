@@ -36,6 +36,7 @@ You can start coding in 5 minutes.
 git clone https://github.com/adazzle/react-data-grid.git
 cd react-data-grid
 npm install
+npm run build
 npm start
 ```
 
@@ -99,13 +100,12 @@ All contributions are encouraged and most of all we hope you will have some fun 
 For maintainers only.
 
 - `cd` to the root of the repo.
-- Checkout the branch you wish to publish. `master`, `next`, or `canary`
+- Checkout the branch you wish to publish. `master`, `alpha`, or `canary`
 - Make sure your local branch is up to date, no unpushed or missing commits, stash any changes.
 - Install dependencies, bootstrap lerna:
   - `npm i`
 - Build the release files:
   - `npm run build`
-  - `npm run build-commonjs`
 - Update the changelog, if necessary, and commit.
 - Login to the `adazzle` npm account if you haven't already done so:
   - `npm login`
@@ -113,8 +113,8 @@ For maintainers only.
 - Publish the update with lerna:
   - To release a new stable version:
     - `npx lerna publish`
-  - To release a new `next` version:
-    - `npx lerna publish --dist-tag next`
+  - To release a new `alpha` version:
+    - `npx lerna publish --dist-tag alpha`
     - Select `Custom Prerelease`
     - Type in `alpha` for the prerelease name.
   - To release a new `canary` version:

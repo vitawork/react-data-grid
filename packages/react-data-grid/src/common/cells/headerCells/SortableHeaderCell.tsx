@@ -12,14 +12,17 @@ const SORT_TEXT = {
 export interface Props<R> {
   column: CalculatedColumn<R>;
   rowType: HeaderRowType;
-  onSort(columnKey: keyof R, direction: DEFINE_SORT): void;
+  onSort?(columnKey: keyof R, direction: DEFINE_SORT): void;
   sortDirection: DEFINE_SORT;
   sortDescendingFirst: boolean;
+  allRowsSelected: boolean;
+  onAllRowsSelectionChange(checked: boolean): void;
 }
 
 export default function SortableHeaderCell<R>(props: Props<R>) {
-  const { column, rowType, onSort, sortDirection, sortDescendingFirst } = props;
+  const { column, rowType, onSort, sortDirection, sortDescendingFirst, allRowsSelected, onAllRowsSelectionChange } = props;
   function onClick() {
+    if (!onSort) return;
     let direction;
     switch (sortDirection) {
       case DEFINE_SORT.ASC:
@@ -40,12 +43,17 @@ export default function SortableHeaderCell<R>(props: Props<R>) {
     ? column.name
     : isElement(headerRenderer)
       ? React.cloneElement(headerRenderer, { column })
-      : React.createElement(headerRenderer, { column, rowType });
+      : React.createElement(headerRenderer, {
+        column,
+        rowType,
+        allRowsSelected,
+        onAllRowsSelectionChange
+      });
 
   return (
-    <div className="rdg-sortable-header-cell" onClick={onClick}>
-      <span className="pull-right">{SORT_TEXT[sortDirection]}</span>
-      {content}
-    </div>
+    <span className="rdg-header-sort-cell" onClick={onClick}>
+      <span className="rdg-header-sort-name">{content}</span>
+      <span>{SORT_TEXT[sortDirection]}</span>
+    </span>
   );
 }
