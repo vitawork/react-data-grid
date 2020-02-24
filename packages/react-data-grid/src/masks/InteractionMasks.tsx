@@ -552,7 +552,7 @@ export default class InteractionMasks<R> extends React.Component<InteractionMask
       }
 
       // Focus the InteractionMasks, so it can receive keyboard events
-      this.focus();
+      // this.focus();
     });
   };
 
